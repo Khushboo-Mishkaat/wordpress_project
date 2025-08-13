@@ -1,0 +1,66 @@
+name: Deploy WordPress to EC2
+
+on:
+  push:
+    branches:
+      - master  # Trigger the pipeline on push to `master` branch
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest  # Use the latest Ubuntu environment for the job
+    
+    steps:
+      # Step 1: Checkout repository code
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+
+      # Step 2: Set up SSH agent and load the private key for authentication
+      - name: Set up SSH
+        run: |
+          # Create the .ssh directory
+          mkdir -p ~/.ssh
+          
+          # Save the private key from GitHub secrets to a file
+          echo "$SSH_PRIVATE_KEY" | tee ~/.ssh/id_rsa > /dev/null
+          
+          # Set correct permissions for the private key
+          chmod 600 ~/.ssh/id_rsa
+          
+          # Start the SSH agent and add the private key
+          eval $(ssh-agent -s)
+          ssh-add ~/.ssh/id_rsa
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # Add your SSH private key to GitHub Secrets
+
+      # Step 3: Install dependencies (optional step depending on your needs)
+      - name: Install dependencies
+        run: |
+          # Install any necessary dependencies for your project
+          # For example, if you're using PHP projects, you can install Composer or npm packages.
+          # composer install
+          # npm install
+
+      # Step 4: Install rsync tool for file transfer
+      - name: Install rsync
+        run: sudo apt-get update && sudo apt-get install -y rsync
+
+      # Step 5: Add EC2 instance host key to known hosts
+      - name: Add EC2 instance host key to known hosts
+        run: |
+          ssh-keyscan -H $HOST >> $HOME/.ssh/known_hosts
+        env:
+          HOST: ${{ secrets.HOST }}  # Set the EC2 host address (IP or domain) in GitHub Secrets
+
+      # Step 6: Push code to EC2 using rsync
+      - name: Push code to EC2
+        run: |
+          EC2_IP="$HOST"
+          SOURCE_DIR="$GITHUB_WORKSPACE/"  # GitHub workspace directory (your code)
+          DEST_DIR="/var/www/html/wordpress/"  # Destination on EC2 server
+
+          # Use rsync to transfer files securely using SSH
+          rsync -avz --delete-after --exclude='.git' -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" "$SOURCE_DIR" "${{ secrets.USERNAME }}@$EC2_IP:$DEST_DIR"
+        env:
+          HOST: ${{ secrets.HOST }}
+          USERNAME: ${{ secrets.USERNAME }}  # Set the SSH username for your EC2 instance (e.g., 'ubuntu')
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}  # Ensure the private key is correctly passed
